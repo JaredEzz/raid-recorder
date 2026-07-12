@@ -183,8 +183,11 @@ public class RaidRecorderPlugin extends Plugin
 				.filter(m -> m.raidKey().equals(record.getRaid()))
 				.findFirst().orElseThrow(IllegalStateException::new));
 		}
-		if (config.logHistory() && "TOA".equals(record.getRaid()))
+		if (config.logHistory() && "TOA".equals(record.getRaid()) && record.getContext().getPoints() > 0)
 		{
+			// A 0-point raid never reached the reward chest (aborted mid-raid, wiped, etc.) — not a
+			// real scored attempt, so it's excluded from the permanent history/stats trend rather
+			// than dragging down averages with a run that was never finished.
 			appendHistoryAsync(record);
 		}
 	}
@@ -238,12 +241,18 @@ public class RaidRecorderPlugin extends Plugin
 
 	private void pushHistoryToPanel(List<RaidHistoryEntry> entries)
 	{
-		RaidHistoryStats stats = RaidHistoryStats.compute(entries);
+		// Defensive: don't let a 0-point entry that predates the append-time filter above (or that
+		// reached the file some other way) drag down the displayed averages. Filtered for display
+		// only — nothing is rewritten on disk, so old entries are never silently discarded.
+		List<RaidHistoryEntry> scored = entries.stream()
+			.filter(e -> e.getPoints() > 0)
+			.collect(java.util.stream.Collectors.toList());
+		RaidHistoryStats stats = RaidHistoryStats.compute(scored);
 		SwingUtilities.invokeLater(() ->
 		{
 			if (panel != null)
 			{
-				panel.setHistory(entries, stats);
+				panel.setHistory(scored, stats);
 			}
 		});
 	}
