@@ -46,6 +46,7 @@ final class ToaMechanics
 	private static final int GO_WARDENS_LIGHTNING_2 = v("GO_WARDENS_LIGHTNING_2200(WardensP1P2Detector)", 2200);
 	private static final int GO_WARDENS_BOMB = v("GO_WARDENS_BOMB_2198(WardensP1P2Detector)", 2198);
 	private static final int GO_WARDENS_P3_LIGHTNING = v("GO_WARDENS_P3_LIGHTNING_2197(WardensP3Detector)", 2197);
+	private static final int GO_CRONDIS_WATER_HAZARD = v("GO_CRONDIS_WATER_HAZARD_2129(observed live 2026-07-12, no independent source)", 2129);
 
 	// ---- Projectile ids (TODO(verify) — same sources) ----
 	private static final int PJ_KEPHRI_FIREBALL = v("PJ_KEPHRI_FIREBALL_2266(KephriDetector)", 2266);
@@ -113,13 +114,13 @@ final class ToaMechanics
 	 */
 	static MechanicTag classify(MechanicContext ctx)
 	{
-		MechanicTag byTile = classifyTileGraphics(ctx.getTileGraphicsObjectId());
+		MechanicTag byTile = classifyTileGraphics(ctx.getTileGraphicsObjectId(), ctx.getRoom());
 		if (byTile != null)
 		{
 			return byTile;
 		}
 
-		MechanicTag byProjectile = classifyProjectile(ctx.getPlayerTargetedProjectileId());
+		MechanicTag byProjectile = classifyProjectile(ctx.getPlayerTargetedProjectileId(), ctx.getRoom());
 		if (byProjectile != null)
 		{
 			return byProjectile;
@@ -150,7 +151,7 @@ final class ToaMechanics
 		return MechanicTag.UNKNOWN;
 	}
 
-	private static MechanicTag classifyTileGraphics(int id)
+	private static MechanicTag classifyTileGraphics(int id, String room)
 	{
 		if (id < 0)
 		{
@@ -158,69 +159,73 @@ final class ToaMechanics
 		}
 		if (id == GO_HET_BEAM_VERTICAL || id == GO_HET_BEAM_HORIZONTAL || id == GO_HET_BEAM_CRASH)
 		{
-			return new MechanicTag("HET_BEAM", true);
+			return roomTag(room, ToaRooms.PUZZLE_HET, "HET_BEAM", true);
 		}
 		if (id == GO_HET_ORB_OF_DARKNESS)
 		{
-			return new MechanicTag("HET_ORB_OF_DARKNESS", true);
+			return roomTag(room, ToaRooms.PUZZLE_HET, "HET_ORB_OF_DARKNESS", true);
 		}
 		if (id == GO_APMEKEN_VOLATILE_EXPLOSION)
 		{
-			return new MechanicTag("APMEKEN_VOLATILE_EXPLOSION", true);
+			return roomTag(room, ToaRooms.PUZZLE_APMEKEN, "APMEKEN_VOLATILE_EXPLOSION", true);
 		}
 		if (id >= GO_AKKHA_QUADRANT_MIN && id <= GO_AKKHA_QUADRANT_MAX)
 		{
-			return new MechanicTag("AKKHA_QUADRANT_BOMB", true);
+			return roomTag(room, ToaRooms.AKKHA, "AKKHA_QUADRANT_BOMB", true);
 		}
 		if (id == GO_AKKHA_UNSTABLE_ORB)
 		{
-			return new MechanicTag("AKKHA_UNSTABLE_ORB", true);
+			return roomTag(room, ToaRooms.AKKHA, "AKKHA_UNSTABLE_ORB", true);
 		}
 		if (id == GO_BABA_BOULDER_SHADOW_LONG || id == GO_BABA_BOULDER_SHADOW_SHORT)
 		{
-			return new MechanicTag("BABA_FALLING_BOULDER", true);
+			return roomTag(room, ToaRooms.BABA, "BABA_FALLING_BOULDER", true);
 		}
 		if (id == GO_BABA_SLAM)
 		{
-			return new MechanicTag("BABA_SLAM", true);
+			return roomTag(room, ToaRooms.BABA, "BABA_SLAM", true);
 		}
 		if (id == GO_BABA_RUBBLE_EXPLOSION)
 		{
-			return new MechanicTag("BABA_RUBBLE_EXPLOSION", true);
+			return roomTag(room, ToaRooms.BABA, "BABA_RUBBLE_EXPLOSION", true);
 		}
 		if (id == GO_KEPHRI_BOMB_SHADOW_1 || id == GO_KEPHRI_BOMB_SHADOW_2 || id == GO_KEPHRI_BOMB_SHADOW_3
 			|| (id >= GO_KEPHRI_EXPLOSION_MIN && id <= GO_KEPHRI_EXPLOSION_MAX))
 		{
-			return new MechanicTag("KEPHRI_BOMB", true);
+			return roomTag(room, ToaRooms.KEPHRI, "KEPHRI_BOMB", true);
 		}
 		if (id == GO_ZEBAK_EARTHQUAKE)
 		{
-			return new MechanicTag("ZEBAK_EARTHQUAKE", true);
+			return roomTag(room, ToaRooms.ZEBAK, "ZEBAK_EARTHQUAKE", true);
 		}
 		if (id == GO_WARDENS_DDR)
 		{
-			return new MechanicTag("WARDENS_OBELISK_DDR", true);
+			return roomTag(room, ToaRooms.WARDENS_P1_P2, "WARDENS_OBELISK_DDR", true);
 		}
 		if (id == GO_WARDENS_WINDMILL_SHADOW || id == GO_WARDENS_WINDMILL_HIT)
 		{
-			return new MechanicTag("WARDENS_OBELISK_WINDMILL", true);
+			return roomTag(room, ToaRooms.WARDENS_P1_P2, "WARDENS_OBELISK_WINDMILL", true);
 		}
 		if (id == GO_WARDENS_LIGHTNING_1 || id == GO_WARDENS_LIGHTNING_2)
 		{
-			return new MechanicTag("WARDENS_LIGHTNING", true);
+			return roomTag(room, ToaRooms.WARDENS_P1_P2, "WARDENS_LIGHTNING", true);
 		}
 		if (id == GO_WARDENS_BOMB)
 		{
-			return new MechanicTag("WARDENS_BOMB", true);
+			return roomTag(room, ToaRooms.WARDENS_P1_P2, "WARDENS_BOMB", true);
 		}
 		if (id == GO_WARDENS_P3_LIGHTNING)
 		{
-			return new MechanicTag("WARDENS_P3_LIGHTNING", true);
+			return roomTag(room, ToaRooms.WARDENS_P3, "WARDENS_P3_LIGHTNING", true);
+		}
+		if (id == GO_CRONDIS_WATER_HAZARD)
+		{
+			return roomTag(room, ToaRooms.PUZZLE_CRONDIS, "CRONDIS_WATER_HAZARD", true);
 		}
 		return null;
 	}
 
-	private static MechanicTag classifyProjectile(int id)
+	private static MechanicTag classifyProjectile(int id, String room)
 	{
 		if (id < 0)
 		{
@@ -228,25 +233,38 @@ final class ToaMechanics
 		}
 		if (id == PJ_KEPHRI_FIREBALL)
 		{
-			return new MechanicTag("KEPHRI_FIREBALL", true);
+			return roomTag(room, ToaRooms.KEPHRI, "KEPHRI_FIREBALL", true);
 		}
 		if (id == PJ_KEPHRI_EXPLODING_SCARAB)
 		{
-			return new MechanicTag("KEPHRI_EXPLODING_SCARAB", true);
+			return roomTag(room, ToaRooms.KEPHRI, "KEPHRI_EXPLODING_SCARAB", true);
 		}
 		if (id == PJ_WARDENS_SPECIAL_MELEE || id == PJ_WARDENS_SPECIAL_RANGED || id == PJ_WARDENS_SPECIAL_MAGIC)
 		{
-			return new MechanicTag("WARDENS_PRAYER_SPECIAL", true);
+			return roomTag(room, ToaRooms.WARDENS_P1_P2, "WARDENS_PRAYER_SPECIAL", true);
 		}
 		if (id == PJ_WARDENS_CORE_SKULL)
 		{
-			return new MechanicTag("WARDENS_CORE_SKULL", true);
+			return roomTag(room, ToaRooms.WARDENS_P1_P2, "WARDENS_CORE_SKULL", true);
 		}
 		if (id == PJ_P3_AKKHA_GHOST_MAGIC || id == PJ_P3_AKKHA_GHOST_RANGED
 			|| id == PJ_P3_ZEBAK_GHOST_MAGIC || id == PJ_P3_ZEBAK_GHOST_RANGED)
 		{
-			return new MechanicTag("WARDENS_P3_GHOST_ATTACK", true);
+			return roomTag(room, ToaRooms.WARDENS_P3, "WARDENS_P3_GHOST_ATTACK", true);
 		}
 		return null;
+	}
+
+	/**
+	 * Gates a graphics-object / projectile mechanic to the room that actually owns it. These raw ids
+	 * are not globally unique across ToA: during a live raid on 2026-07-12 the Wardens P3 ghost
+	 * projectiles fired their ids inside the Zebak and Akkha fights and Kephri's bomb graphics fired
+	 * inside Ba-Ba and Wardens P3, which mislabeled ordinary boss damage as avoidable and corrupted
+	 * the coach's findings. Returning null on a room mismatch lets {@link #classify} fall through to
+	 * the NPC-id / hitsplat / room-default steps instead of trusting a cross-room id collision.
+	 */
+	private static MechanicTag roomTag(String actualRoom, String expectedRoom, String mechanic, boolean avoidable)
+	{
+		return expectedRoom.equals(actualRoom) ? new MechanicTag(mechanic, avoidable) : null;
 	}
 }

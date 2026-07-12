@@ -59,6 +59,18 @@ public class CaptureEngine
 	private static final int DOWNTIME_WINDOW_MIN_TICKS = 10;
 	/** How long a graphics object stays relevant for damage attribution. */
 	private static final int GRAPHICS_RELEVANCE_TICKS = 6;
+	/**
+	 * After a raid finishes, region membership alone will not start a new session for this many
+	 * ticks. Raid detection is region-based, but right after {@link #finishRaid} the player is still
+	 * standing in the boss region (looting the chest, walking out), so an unguarded region check
+	 * would immediately spawn a phantom session on the tail of the raid that just ended. A genuine
+	 * re-entry — a fresh RAID_STARTED chat line fired after the last finish — bypasses this instantly.
+	 */
+	private static final int POST_FINISH_COOLDOWN_TICKS = 30;
+	/** How far back {@link #probableSource} trusts a "this NPC was interacting with me" sample. */
+	private static final int INTERACTION_LOOKBACK_TICKS = 2;
+	/** Chebyshev tile radius for the nearest-animating-NPC last-resort damage-source guess. */
+	private static final int NEAREST_SOURCE_MAX_TILES = 2;
 
 	private static final Skill[] COMBAT_SKILLS = {
 		Skill.ATTACK, Skill.STRENGTH, Skill.DEFENCE, Skill.RANGED, Skill.MAGIC,
@@ -91,12 +103,22 @@ public class CaptureEngine
 	private int outOfRaidTicks;
 	private int completionCountdown = -1;
 	private boolean manualActive;
+	/** Tick of the most recent {@link #finishRaid}, so a new session can't start on its tail. */
+	private int lastFinishTick = Integer.MIN_VALUE;
+	/** Tick a genuine RAID_STARTED chat line last fired — the trustworthy "player entered" signal. */
+	private int raidStartedSignalTick = Integer.MIN_VALUE;
 
 	// Cross-cutting per-tick state
 	private WorldPoint lastPlayerLocation;
 	private HeadIcon lastOverhead;
 	private int lastSpecEnergy = -1;
 	private final Map<WorldPoint, int[]> recentTileGraphics = new HashMap<>();
+	/**
+	 * NPCs recently seen interacting with the local player, mapped to the tick last seen. Mirrors the
+	 * {@link #recentTileGraphics} idiom: a hit's true source often clears its interaction between the
+	 * tick it commits an attack and the tick the hitsplat lands, so a short lookback recovers it.
+	 */
+	private final Map<NPC, Integer> recentInteractors = new HashMap<>();
 	private Map<String, Integer> lastInventoryDoses;
 	private int lastTargetedProjectileId = -1;
 	private int lastTargetedProjectileTick = -1;
@@ -200,6 +222,7 @@ public class CaptureEngine
 		trackRoomTransition(module);
 		sampleTick(module, local);
 		expireTileGraphics();
+		expireRecentInteractors();
 	}
 
 	private void maybeStartSession()
@@ -213,9 +236,23 @@ public class CaptureEngine
 		{
 			return;
 		}
-		session = new RaidSession(module, client.getTickCount(), System.currentTimeMillis());
+		int now = client.getTickCount();
+		// Region membership alone is not a reliable raid-entry signal: right after a raid finishes the
+		// player lingers in the boss region, which would otherwise spawn a phantom session that
+		// immediately "finishes" again and exports junk. Require either a genuine entry chat line that
+		// fired after our last finish (correct re-entry), or that enough ticks have elapsed since the
+		// finish to rule out that tail. Manual arming bypasses the gate — it's an explicit request.
+		boolean freshEntrySignal = raidStartedSignalTick > lastFinishTick;
+		boolean cooldownElapsed = lastFinishTick == Integer.MIN_VALUE
+			|| now - lastFinishTick >= POST_FINISH_COOLDOWN_TICKS;
+		if (!manualActive && !freshEntrySignal && !cooldownElapsed)
+		{
+			return;
+		}
+		session = new RaidSession(module, now, System.currentTimeMillis());
 		outOfRaidTicks = 0;
 		completionCountdown = -1;
+		recentInteractors.clear();
 		lastInventoryDoses = null;
 		lastSpecEnergy = client.getVarpValue(VarPlayerID.SA_ENERGY);
 		liveHitTracker.reset();
@@ -273,12 +310,24 @@ public class CaptureEngine
 		}
 
 		int tick = client.getTickCount();
+		boolean sawAttackable = false;
 		for (NPC npc : client.getTopLevelWorldView().npcs())
 		{
-			if (npc != null && module.isAttackableTarget(npc, room.getRoomKey()))
+			if (npc == null)
+			{
+				continue;
+			}
+			if (!sawAttackable && module.isAttackableTarget(npc, room.getRoomKey()))
 			{
 				room.recordAttackableTick(tick);
-				break;
+				sawAttackable = true;
+			}
+			// Feed the recent-interactors cache used by probableSource() to recover a hit's source
+			// when the attacker briefly clears its interaction between committing an attack and the
+			// hitsplat landing a tick or two later.
+			if (npc.getInteracting() == local)
+			{
+				recentInteractors.put(npc, tick);
 			}
 		}
 
@@ -312,6 +361,15 @@ public class CaptureEngine
 
 		if (target instanceof NPC && event.getHitsplat().isMine())
 		{
+			// Investigation note (Bug 4, raid-20260712-103049): WARDENS_P1_P2's ~10k damageDealt total
+			// was verified legitimate, not thrall or double-count corruption. byTarget sums exactly to
+			// the total across distinct (transforming) warden ids, and it is dominated by real P2 burst
+			// damage — a single ~1700 obelisk-detonation hitsplat plus repeated large mechanic hits on
+			// the wardens, all of which isMine()==true. Summoned-thrall-range hits (<=3) summed to only
+			// ~107, so thrall misattribution is not the cause and no per-source split is applied here.
+			// Known limitation: those same giant mechanic hitsplats (and any thrall hits that do land)
+			// still feed the live per-weapon running-max/luck tracker in recordLiveHit, which can skew
+			// it; left as-is since it does not affect the persisted damage totals.
 			NPC npc = (NPC) target;
 			int amount = event.getHitsplat().getAmount();
 			String targetLabel = module.npcLabel(npc);
@@ -343,7 +401,7 @@ public class CaptureEngine
 	private void recordDamageTaken(HitsplatApplied event, RoomCapture room, RaidModule module, int tick)
 	{
 		Player local = client.getLocalPlayer();
-		NPC source = probableSource(local);
+		NPC source = probableSource(local, tick);
 
 		int tileGraphic = -1;
 		if (lastPlayerLocation != null)
@@ -391,8 +449,14 @@ public class CaptureEngine
 		}
 	}
 
-	/** The NPC currently targeting the local player, if any — our best guess at the damage source. */
-	private NPC probableSource(Player local)
+	/**
+	 * Best guess at what dealt a hit to the local player. Prefers an NPC currently pointing at us,
+	 * then one that pointed at us within the last {@link #INTERACTION_LOOKBACK_TICKS} ticks (attackers
+	 * routinely clear their interaction between committing an attack and its hitsplat landing), then a
+	 * nearby NPC mid-animation whose interaction we simply never sampled. All heuristic: a hit from an
+	 * off-screen or purely-AoE source that never showed interaction still resolves to null (UNKNOWN).
+	 */
+	private NPC probableSource(Player local, int tick)
 	{
 		if (local == null)
 		{
@@ -405,7 +469,70 @@ public class CaptureEngine
 				return npc;
 			}
 		}
-		return null;
+		NPC recent = null;
+		int recentTick = Integer.MIN_VALUE;
+		for (Map.Entry<NPC, Integer> entry : recentInteractors.entrySet())
+		{
+			if (tick - entry.getValue() <= INTERACTION_LOOKBACK_TICKS && entry.getValue() > recentTick)
+			{
+				recent = entry.getKey();
+				recentTick = entry.getValue();
+			}
+		}
+		if (recent != null)
+		{
+			return recent;
+		}
+		return nearestAnimatingNpc(local);
+	}
+
+	/**
+	 * Nearest NPC within melee-ish range that is mid-animation — a last-resort source guess for a hit
+	 * whose attacker we never caught interacting. Kept tight (Chebyshev &lt;= 2 tiles) to avoid grabbing
+	 * a bystander. Distance is measured in local (instance) coordinates so it works inside raid
+	 * instances, where world coordinates are template-relative and wouldn't compare correctly.
+	 */
+	private NPC nearestAnimatingNpc(Player local)
+	{
+		net.runelite.api.coords.LocalPoint self = local.getLocalLocation();
+		if (self == null)
+		{
+			return null;
+		}
+		int selfPlane = local.getWorldLocation() != null ? local.getWorldLocation().getPlane() : -1;
+		NPC best = null;
+		int bestDist = Integer.MAX_VALUE;
+		for (NPC npc : client.getTopLevelWorldView().npcs())
+		{
+			if (npc == null || npc.getAnimation() == -1)
+			{
+				continue;
+			}
+			WorldPoint npcWp = npc.getWorldLocation();
+			if (npcWp != null && selfPlane >= 0 && npcWp.getPlane() != selfPlane)
+			{
+				continue;
+			}
+			net.runelite.api.coords.LocalPoint lp = npc.getLocalLocation();
+			if (lp == null)
+			{
+				continue;
+			}
+			// Local coordinates are 128 units per tile; MAX_TILES tiles = MAX_TILES * 128 units.
+			int cheb = Math.max(Math.abs(self.getX() - lp.getX()), Math.abs(self.getY() - lp.getY()));
+			if (cheb <= NEAREST_SOURCE_MAX_TILES * 128 && cheb < bestDist)
+			{
+				best = npc;
+				bestDist = cheb;
+			}
+		}
+		return best;
+	}
+
+	private void expireRecentInteractors()
+	{
+		int tick = client.getTickCount();
+		recentInteractors.entrySet().removeIf(e -> tick - e.getValue() > INTERACTION_LOOKBACK_TICKS);
 	}
 
 	@Subscribe
@@ -508,7 +635,10 @@ public class CaptureEngine
 		switch (chatEvent.type)
 		{
 			case RAID_STARTED:
-				// Region detection usually starts the session first; this is a fallback signal.
+				// The trustworthy "player genuinely entered a raid" signal. Recorded unconditionally so
+				// maybeStartSession() can tell a real (re-)entry apart from the tail of the raid that
+				// just finished. Region detection usually still starts the session first.
+				raidStartedSignalTick = client.getTickCount();
 				if (session == null)
 				{
 					maybeStartSession();
@@ -526,7 +656,12 @@ public class CaptureEngine
 				}
 				break;
 			case RAID_COMPLETED:
-				if (session != null)
+				// Guard against a residual completion line from the raid that just ended leaking into a
+				// freshly-started session (which then wrongly finishes as "completed"). A genuine
+				// completion always has room progress behind it; a new session still sitting in the
+				// nexus/loot area with no rooms cannot have just been completed.
+				if (session != null
+					&& (session.getCurrentRoom() != null || !session.getCompletedRooms().isEmpty()))
 				{
 					session.setOfficialTotalTicks(chatEvent.officialTicks);
 					completionCountdown = COMPLETION_GRACE_TICKS;
@@ -771,8 +906,10 @@ public class CaptureEngine
 		this.session = null;
 		completionCountdown = -1;
 		outOfRaidTicks = 0;
+		recentInteractors.clear();
 
 		int tick = client.getTickCount();
+		lastFinishTick = tick;
 		long now = System.currentTimeMillis();
 		RoomRecord lastRoom = finished.completeRoom(tick, now, DOWNTIME_WINDOW_MIN_TICKS);
 		if (lastRoom != null && onRoomCompleted != null)
@@ -801,6 +938,17 @@ public class CaptureEngine
 
 		log.info("[raid-recorder] recording finished ({}): {} rooms, {} ticks",
 			reason, record.getRooms().size(), tick - finished.getStartTick());
+
+		// A session that completed no rooms is a phantom/degenerate entry (e.g. entered and left the
+		// lobby, or a residual detection blip): exporting it produces junk JSON/summary/prompt files
+		// and pollutes raid history. Log it for visibility but don't propagate a useless record —
+		// onRaidFinished drives both export and history-append in the plugin.
+		if (record.getRooms().isEmpty())
+		{
+			log.info("[raid-recorder] discarding empty session ({}): no completed rooms, nothing exported",
+				reason);
+			return;
+		}
 
 		if (onRaidFinished != null)
 		{

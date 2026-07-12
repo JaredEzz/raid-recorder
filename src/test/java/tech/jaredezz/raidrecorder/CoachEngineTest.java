@@ -148,6 +148,14 @@ public class CoachEngineTest
 	}
 
 	@Test
+	public void uptimeThatRoundsToTheThresholdIsNotFlagged()
+	{
+		// 54.83% is fractionally under the 55% warn bar, but both render as "55%" in the summary.
+		// The coach must not fire a WARN that reads as "55% (expected ≥55%)".
+		assertTrue(new DpsUptimeRule().evaluate(recordWithRoom(room(54.83)), context(200)).isEmpty());
+	}
+
+	@Test
 	public void avoidableDamageEscalates()
 	{
 		RoomRecord room = room(60);

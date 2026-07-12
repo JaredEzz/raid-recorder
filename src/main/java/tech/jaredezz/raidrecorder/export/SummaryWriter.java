@@ -28,6 +28,8 @@ final class SummaryWriter
 		md.append("| | |\n|---|---|\n");
 		row(md, "Player", record.getAccount().getRsn() + " (" + record.getAccount().getType() + ")");
 		row(md, "KC after this raid", ctx.getKc() >= 0 ? String.valueOf(ctx.getKc()) : "unknown");
+		row(md, "Points", ctx.getPoints() >= 0 ? String.valueOf(ctx.getPoints()) : "unknown");
+		row(md, "Purple", ctx.getPurple() == null ? "unknown" : (ctx.getPurple() ? "yes" : "no"));
 		row(md, "Raid level", ctx.getRaidLevel() >= 0 ? String.valueOf(ctx.getRaidLevel()) : "unknown");
 		row(md, "Team size", String.valueOf(ctx.getTeamSize()));
 		row(md, "Invocations", ctx.getInvocations().getParsed().isEmpty()

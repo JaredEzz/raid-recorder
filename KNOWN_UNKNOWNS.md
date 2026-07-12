@@ -14,15 +14,13 @@ toa-raid-log plugin built against this same API version). Region ids are cross-c
 independent Plugin Hub plugins (LlemonDuck/tombs-of-amascut, ToaMistakeTracker,
 TombsOfAmascutStats, AdvancedRaidTracker) and treated as verified.
 
-## 1. Account type varbit **value ordering** — `AccountType.fromVarbit`
+## 1. Account type varbit **value ordering** — `AccountType.fromVarbit` — **RESOLVED, verified live 2026-07-12**
 
-Varbit 1777 itself is verified (`VarbitID.IRONMAN` = legacy `Varbits.ACCOUNT_TYPE`), but the
-**meaning of values 2-6** follows RuneLite's removed `AccountType` enum ordering
-(0 NORMAL, 1 IRONMAN, 2 ULTIMATE, 3 HARDCORE, 4 GIM, 5 HC-GIM, 6 UNRANKED-GIM).
-**Check:** log the raw value once in a live session (boomball is GIM → expect 4), or read
-`net.runelite.client.game.chatbox`-era AccountType history in the runelite repo.
-**Failure mode:** wrong label in exports; coach still never suggests buying (any non-zero value is
-treated as an ironman variant except UNKNOWN).
+Varbit 1777 (`VarbitID.IRONMAN` = legacy `Varbits.ACCOUNT_TYPE`) confirmed live during a full ToA
+raid on boomball (a GROUP_IRONMAN account): the export correctly showed `GROUP_IRONMAN`. The
+assumed enum ordering (0 NORMAL, 1 IRONMAN, 2 ULTIMATE, 3 HARDCORE, 4 GIM, 5 HC-GIM, 6
+UNRANKED-GIM) is confirmed correct for value 4 at minimum; values 2/3/5/6 remain unverified but
+the ordering pattern is now trusted.
 
 ## 2. GraphicsObject / Projectile ids in `ToaMechanics` (the big one)
 
@@ -97,20 +95,16 @@ positive deltas (correctly ignored). Charged jewellery `(n)` suffixes are exclud
 new charged item names could leak through.
 **Check:** compare a raid's `suppliesUsed` against what you actually ate/drank.
 
-## 8a. `TOA_CLIENT_RAID_LEVEL` reads 0 in the lobby (confirmed live, 2026-07-10)
+## 8a. `TOA_CLIENT_RAID_LEVEL` reads 0 in the lobby, populates in-raid — **RESOLVED, verified live 2026-07-12**
 
-Live-tested: with 21-22 invocations actively toggled in the lobby (including large-point ones —
-Insanity, Walk The Path, Overclocked II), the varbit read consistently `0`. The invocation names
-themselves read correctly and updated live tick-to-tick as toggles changed. **Fix applied**:
-`ToaInvocationReader` now uses the varbit only when it's `>0` (in-raid, presumably
-server-confirmed), falling back to `ToaInvocation.sumRaidLevel(activeInvocations)` — summing each
-invocation's known point value — whenever the varbit is 0 (lobby preview). Both the raw varbit and
-the computed sum are recorded in the export (`invocations.raw.raidLevelVarbit` /
-`.raidLevelComputed`) for transparency. **Still unverified:** whether the varbit reliably populates
-once you actually enter the raid (untested — no completed raid yet), and whether the point-sum
-formula has an undocumented cap/rounding rule beyond the per-invocation values already in
-`ToaInvocation`. **Check:** compare `raidLevelVarbit` to `raidLevelComputed` in a completed raid's
-export; they should match once genuinely in-raid.
+Live-tested 2026-07-10: with 21-22 invocations toggled in the lobby, the varbit read consistently
+`0` while the invocation names themselves read correctly and updated live. **Fix applied**:
+`ToaInvocationReader` uses the varbit only when it's `>0`, falling back to
+`ToaInvocation.sumRaidLevel(activeInvocations)` when it's 0 (lobby preview); both values are
+recorded in the export for transparency. **Confirmed 2026-07-12** on a full completed raid:
+`raidLevelVarbit` and `raidLevelComputed` both read `280` — an exact match, confirming both (a) the
+varbit does populate once genuinely in-raid, and (b) the point-sum formula has no hidden
+cap/rounding at this invocation set. The point-sum formula is now trusted.
 
 ## 8. Invocation interface layout — `ToaInvocationReader`
 
@@ -142,6 +136,66 @@ II/Insanity, etc.) and would be a meaningful secondary project prone to subtle e
 empirical approach is always correct by construction, at the cost of the first hit with any
 weapon having no ceiling to compare against yet (shown as "first hit," not scored). If a true
 theoretical calculator is wanted later, it's a separate, larger addition — not a bug fix to this.
+
+## 12. First full live-raid validation (2026-07-12) — findings and fixes
+
+Ran a complete solo ToA raid (level 280, 21 invocations, GROUP_IRONMAN, KC 66→66, deathless,
+10/10 rooms) end to end for the first time. Everything in the capture pipeline worked correctly:
+region-based room detection through all 10 rooms, chat-parsed lifecycle (start/room-complete/
+raid-complete/KC, including a fused multi-line completion message), points (19372) and purple
+(false) captured at the chest, invocation/party/account-type reads, and the export pipeline.
+Three real bugs were found and fixed same-day:
+
+- **Cross-room mechanic misclassification (the significant one).** `ToaMechanics.classify()` had
+  no per-room gating on its GraphicsObject/Projectile id lookups, so ids that collide with
+  something in an unrelated boss's kit misfired outside their real room —
+  `WARDENS_P3_GHOST_ATTACK` fired during Zebak and Akkha; `KEPHRI_BOMB` fired during Ba-Ba and
+  Wardens P3. This corrupted the deterministic coach's avoidable-damage findings for those rooms
+  (Zebak's entire damage-taken total was mislabeled as an avoidable Wardens mechanic). **Fixed**:
+  every graphics-object/projectile mechanic tag now only fires when `ctx.getRoom()` matches its
+  real owning room; a mismatch falls through to the NPC-id → hitsplat-type → generic
+  `<ROOM>_ATTACK`/UNKNOWN chain instead. Covered by `ToaMechanicsTest`, including the exact
+  reproduction case (P3 ghost projectile id in Zebak's room → no longer misfires).
+  **Caveat**: raids captured *before* this fix (including `raid-20260712-103049`, the one full raid
+  from today) still have the old mislabeled tags baked into their stored JSON — the room string was
+  already resolved and persisted at capture time, so this can't be retroactively corrected without
+  the raw graphics/projectile id, which isn't stored per-hit. Treat any `KEPHRI_BOMB` in Ba-Ba/
+  Wardens P3 or `WARDENS_P3_GHOST_ATTACK` in Zebak/Akkha in that specific export as
+  known-mislabeled: the damage amount is real, the mechanic name is not.
+- **Phantom sessions right after a real raid finishes.** Raid detection is purely region-based, and
+  the player is still standing in the boss region for a while after `finishRaid()` runs (looting,
+  walking out), so an unguarded region check immediately started a brand-new session on the tail of
+  the one that just ended — producing junk exports. **Fixed**: a 30-tick cooldown after
+  `finishRaid()` during which region membership alone won't start a new session, bypassed instantly
+  by a genuine `RAID_STARTED` chat line (a real re-entry). Also hardened `RAID_COMPLETED`/
+  `ROOM_COMPLETED` chat handling to require the session already has real progress, so a residual
+  chat event from the just-ended raid can't flip a brand-new empty session to "(completed)". Sessions
+  with zero completed rooms no longer export (skip `onRaidFinished` entirely) — previously even a
+  0-room session wrote three junk files.
+- **Real damage falling through with no source NPC.** `probableSource()` only checked
+  `npc.getInteracting() == player` at the exact hit tick, missing sources that briefly clear
+  interaction state between committing an attack and the hitsplat landing (6 real, non-zero-damage
+  events this raid: a 29-dmg hit in Ba-Ba, five 3-dmg hits in Wardens P1/P2). **Improved**: now
+  checks (1) current-tick interaction, (2) an NPC that interacted with the player within the last 2
+  ticks (same idiom as the existing tile-graphics lookback), (3) last resort, the nearest
+  mid-animation NPC within 2 tiles. Still a heuristic — a pure off-screen/AoE hit can still resolve
+  to UNKNOWN — but recovers real cases the old exact-tick check missed.
+
+Also investigated and **ruled out** as a bug: Wardens P1/P2 showed 10,022 total damage dealt (5-10x
+every other room), suspected as Necromancy-thrall damage leaking into the player's own totals (a
+thrall was active during part of the raid). The raw JSON showed this is legitimate — dominated by a
+single 1700-damage obelisk-detonation hitsplat plus repeated large mechanic hits — and thrall-range
+hits (≤3 dmg) summed to only ~107 damage, negligible against the total. No thrall-attribution code
+was added since there was no real bug to fix; the live-feed's per-weapon max/DPS tracking can still
+be skewed by large non-weapon mechanic hitsplats landing as "mine," which remains an open item if
+the live feed's accuracy during heavy-mechanic rooms ever needs tightening.
+
+Also fixed: the coach's DPS-uptime rule could WARN a room whose displayed uptime exactly equals its
+displayed threshold (e.g. "34% (expected ≥34%)") — root cause was comparing at full floating-point
+precision while displaying rounded whole percents (33.83 vs a 34.0 threshold genuinely compares
+below, but both round to "34%"). Fixed by rounding both sides to the same precision before
+comparing. And: `SummaryWriter` never rendered the `points`/`purple` fields in the human-readable
+summary despite capturing them correctly in the JSON — added as two more rows in the context table.
 
 ## Assumptions (explicit)
 

@@ -38,7 +38,14 @@ public class DpsUptimeRule implements CoachRule
 			double goodAt = context.getThresholds().getDpsUptimeGoodPct();
 			double uptime = room.getDpsUptimePct();
 
-			if (uptime < warnAt)
+			// Findings report whole-percent figures (%.0f), so every boundary decision is made at
+			// that same precision. Otherwise a room whose raw uptime is fractionally under the bar
+			// (33.83 vs an expected 34.0) fires a WARN that reads as self-contradictory once both
+			// sides round to "34%". Comparing the rounded values keeps the verdict consistent with
+			// what the player is actually shown.
+			long uptimeShown = Math.round(uptime);
+
+			if (uptimeShown < Math.round(warnAt))
 			{
 				findings.add(new CoachFinding(room.getRoom(), Severity.WARN, "dps_uptime_low",
 					String.format("DPS uptime in %s was %.0f%% (expected ≥%.0f%% at your KC) — "
@@ -47,7 +54,7 @@ public class DpsUptimeRule implements CoachRule
 					ImmutableMap.of("uptimePct", uptime, "warnThresholdPct", warnAt,
 						"downtimeWindows", room.getDowntimeWindows().size())));
 			}
-			else if (uptime >= goodAt)
+			else if (uptimeShown >= Math.round(goodAt))
 			{
 				findings.add(new CoachFinding(room.getRoom(), Severity.GOOD, "dps_uptime_good",
 					String.format("Strong DPS uptime in %s: %.0f%%.", room.getRoom(), uptime),
