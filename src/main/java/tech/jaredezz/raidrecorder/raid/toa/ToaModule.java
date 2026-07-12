@@ -376,17 +376,51 @@ public class ToaModule implements RaidModule
 		return ToaRooms.ALL;
 	}
 
+	/**
+	 * Wiki-sourced primary combat style(s) per boss room; empty = "no opinion" (disables the
+	 * wrong-style rule), which is the honest answer for rooms with no single dominant style.
+	 * Every entry (and every deliberate omission) is cited below and in KNOWN_UNKNOWNS.md #13.
+	 * Verified against the OSRS Wiki 2026-07-12.
+	 */
 	@Override
 	public List<String> recommendedStyles(String roomKey)
 	{
 		switch (roomKey)
 		{
 			case ToaRooms.BABA:
-				return ImmutableList.of("MELEE", "RANGED");
+				// Ba-Ba is a melee (stab) DPS fight: lowest melee defence is stab (+80), highest is
+				// crush (+240); magic (+280) and ranged (+200) defences make casting/shooting the boss
+				// strictly worse. The boulder/baboon mechanics are damage-avoidance, not a second DPS
+				// style. Source: oldschool.runescape.wiki/w/Ba-Ba and /w/Tombs_of_Amascut/Strategies
+				// ("Melee is primarily used for Ba-Ba, Kephri, Akkha, and Warden's core").
+				return ImmutableList.of("MELEE");
+			case ToaRooms.AKKHA:
+				// Akkha's magic defence (+10) is far lower than ranged (+60) or melee (stab +60,
+				// slash/crush +120); Tumeken's shadow (magic, 4x in-raid) is the strongest weapon here,
+				// with ranged the clear secondary. Melee is viable for melee-only setups but slower.
+				// Source: /w/Akkha (defensive stats) and /w/Tombs_of_Amascut/Strategies
+				// ("Magic is primarily used for Akkha ... the strongest weapon against Akkha").
+				return ImmutableList.of("MAGIC", "RANGED");
 			case ToaRooms.ZEBAK:
-			case ToaRooms.KEPHRI:
+				// Ranged-primary (Twisted bow is the strongest weapon at Zebak, exploiting his high
+				// magic bonus), magic secondary. Source: /w/Tombs_of_Amascut/Strategies ("Ranged is
+				// primarily used for Zebak ... the Twisted bow ... is the strongest weapon at Zebak").
 				return ImmutableList.of("RANGED", "MAGIC");
+			case ToaRooms.KEPHRI:
+				// Deliberately empty — Kephri has no single dominant style, so any single-style claim
+				// is wrong (the old "RANGED/MAGIC" here produced the bogus "Kephri's a ranged fight"
+				// coaching). It is genuinely two-phase: the shielded/swarm phase is cleared with RANGED
+				// (chinchompas / fast weapon), and the exposed/dazed boss is killed with MELEE (stab;
+				// fang BIS — shield-phase defences are slash/ranged +300, magic +200, but stab only
+				// +60). Fire magic is a niche third option (~40% fire weakness since May 2024). A
+				// legitimate kill mixes MELEE (boss) and RANGED (swarms), so "no opinion" is the only
+				// honest answer. Source: /w/Kephri (defensive stats) and /w/Tombs_of_Amascut/Strategies.
+				return Collections.emptyList();
 			default:
+				// Wardens (P1_P2, P3) also deliberately omitted: style is phase-gated, not single.
+				// P2 forces RANGED first (simultaneous Protect from Melee + Magic), then the exposed
+				// core takes max hits only from MELEE; P3 mixes all styles. No single dominant style,
+				// so "no opinion". Source: /w/Tumeken's_Warden and /w/Tombs_of_Amascut/Strategies.
 				return Collections.emptyList();
 		}
 	}

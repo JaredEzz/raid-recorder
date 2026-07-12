@@ -1,5 +1,6 @@
 package tech.jaredezz.raidrecorder;
 
+import java.util.Arrays;
 import org.junit.Test;
 import tech.jaredezz.raidrecorder.raid.RaidModule;
 import tech.jaredezz.raidrecorder.raid.toa.ToaModule;
@@ -7,6 +8,7 @@ import tech.jaredezz.raidrecorder.raid.toa.ToaModule;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 public class ToaChatParsingTest
 {
@@ -97,6 +99,46 @@ public class ToaChatParsingTest
 	{
 		assertNull(module.onChatMessage("Welcome to Old School RuneScape."));
 		assertNull(module.onChatMessage("Challenge complete: Some Unknown Room. Duration: 1:00"));
+	}
+
+	// Wiki-sourced recommended styles (verified 2026-07-12; see KNOWN_UNKNOWNS.md #13). These lock
+	// in the fact-check: Ba-Ba is melee-only, Zebak ranged/magic, Akkha magic/ranged, and Kephri +
+	// the Wardens carry NO single-style claim because their styles are genuinely phase-split.
+
+	@Test
+	public void baBaIsMeleeOnly()
+	{
+		// Was wrongly "MELEE, RANGED" — Ba-Ba is a melee (stab) DPS fight.
+		assertEquals(Arrays.asList("MELEE"), module.recommendedStyles("BABA"));
+	}
+
+	@Test
+	public void zebakIsRangedThenMagic()
+	{
+		assertEquals(Arrays.asList("RANGED", "MAGIC"), module.recommendedStyles("ZEBAK"));
+	}
+
+	@Test
+	public void akkhaIsMagicThenRanged()
+	{
+		// Was "no opinion" — Akkha's magic defence (+10) makes magic/ranged the recommended styles.
+		assertEquals(Arrays.asList("MAGIC", "RANGED"), module.recommendedStyles("AKKHA"));
+	}
+
+	@Test
+	public void kephriHasNoSingleStyle()
+	{
+		// The headline fix: Kephri is two-phase (RANGED swarms, MELEE boss), so any single-style
+		// claim is wrong. Empty = "no opinion" disables the wrong-style rule for the room.
+		assertTrue(module.recommendedStyles("KEPHRI").isEmpty());
+	}
+
+	@Test
+	public void wardensHaveNoSingleStyle()
+	{
+		// Phase-gated (P2 ranged then melee-on-core, P3 mixed) — no single dominant style.
+		assertTrue(module.recommendedStyles("WARDENS_P1_P2").isEmpty());
+		assertTrue(module.recommendedStyles("WARDENS_P3").isEmpty());
 	}
 
 	@Test

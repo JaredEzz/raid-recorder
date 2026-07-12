@@ -73,7 +73,11 @@ public interface RaidModule
 
 	/**
 	 * Combat styles ("MELEE", "RANGED", "MAGIC") that are sensible primary styles in this room.
-	 * Empty means "no opinion" and disables the wrong-gear-style rule for the room.
+	 * Empty means "no opinion" and disables the wrong-gear-style rule for the room — which is the
+	 * honest answer whenever the real game mechanics don't support a single dominant style (e.g. a
+	 * boss whose damage is genuinely split across phases/styles). Implementations must source these
+	 * from an authoritative reference (OSRS Wiki) and cite it, not from assumption — see
+	 * KNOWN_UNKNOWNS.md #13 for why.
 	 */
 	default List<String> recommendedStyles(String roomKey)
 	{

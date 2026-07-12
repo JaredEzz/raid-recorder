@@ -197,6 +197,34 @@ below, but both round to "34%"). Fixed by rounding both sides to the same precis
 comparing. And: `SummaryWriter` never rendered the `points`/`purple` fields in the human-readable
 summary despite capturing them correctly in the JSON — added as two more rows in the context table.
 
+## 13. `recommendedStyles()` was an unverified gameplay-strategy claim — **RESOLVED, wiki-sourced 2026-07-12**
+
+This is a genuine **process gap**, not just a code bug. `ToaModule.recommendedStyles()` — which
+drives the coach's `WrongStyleRule` (WARN when a room's damage-by-style doesn't match the list) and
+fed an LLM report — hardcoded per-boss "recommended styles" written from assumption during initial
+development. It had **no citation, no wiki check, and no KNOWN_UNKNOWNS entry**, so it never went
+through this project's "flag every unverified claim" discipline. It surfaced only when a real player
+was told "Kephri's a ranged fight," which is wrong. The old table was `BABA → MELEE, RANGED`,
+`ZEBAK/KEPHRI → RANGED, MAGIC`, everything else empty.
+
+Fact-checked against the OSRS Wiki (`oldschool.runescape.wiki`) 2026-07-12:
+
+| Room | Old (assumed) | Corrected (wiki-sourced) | Why |
+|---|---|---|---|
+| Ba-Ba | MELEE, RANGED | **MELEE** | Melee (stab) DPS fight; boulders/baboons are avoidance, not a 2nd style. `/w/Ba-Ba`, `/w/Tombs_of_Amascut/Strategies` |
+| Kephri | RANGED, MAGIC (**wrong**) | **empty (no opinion)** | Two-phase: RANGED clears swarms, **MELEE (stab, fang)** kills the exposed boss (shield defences slash/ranged +300, magic +200, stab +60); fire magic a niche ~40% weakness. No single dominant style. `/w/Kephri` |
+| Zebak | RANGED, MAGIC | **RANGED, MAGIC** (kept) | Ranged-primary (Twisted bow strongest), magic secondary. `/w/Tombs_of_Amascut/Strategies` |
+| Akkha | empty | **MAGIC, RANGED** (added) | Magic defence +10 (vs ranged +60, melee +60/120); Tumeken's shadow strongest. `/w/Akkha`, strategies |
+| Wardens P1/P2, P3 | empty | **empty** (kept, now cited) | Phase-gated: P2 forces ranged then melee-on-core; P3 mixed. `/w/Tumeken's_Warden` |
+
+The headline correction is **Kephri**: the plugin's whole "one recommended style per room" model is
+unsound for it, so the honest fix is an empty list (= disable the wrong-style rule there) rather than
+force a single answer. Same reasoning omits the Wardens. Only rooms with a genuine single dominant
+style now carry a claim, each cited in a comment in `recommendedStyles()`.
+**Check:** re-confirm against the wiki after any ToA-affecting balance update (Kephri's fire
+weakness, Ba-Ba's Jun-2025 melee-block change, and shadow's raid buff have all moved historically).
+**Failure mode:** a stale style list mis-fires or suppresses `WrongStyleRule`; never crashes.
+
 ## Assumptions (explicit)
 
 1. Raid detection is purely region-based (`WorldPoint.fromLocalInstance`); no varbit fallback for ToA.
