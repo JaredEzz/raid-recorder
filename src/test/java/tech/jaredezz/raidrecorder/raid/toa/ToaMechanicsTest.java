@@ -1,5 +1,7 @@
 package tech.jaredezz.raidrecorder.raid.toa;
 
+import net.runelite.api.HitsplatID;
+import net.runelite.api.gameval.NpcID;
 import org.junit.Test;
 import tech.jaredezz.raidrecorder.raid.MechanicContext;
 import tech.jaredezz.raidrecorder.raid.MechanicTag;
@@ -60,5 +62,46 @@ public class ToaMechanicsTest
 		MechanicTag tag = ToaMechanics.classify(base(ToaRooms.PUZZLE_CRONDIS).tileGraphicsObjectId(2129).build());
 		assertEquals("CRONDIS_WATER_HAZARD", tag.getMechanic());
 		assertEquals(true, tag.isAvoidable());
+	}
+
+	@Test
+	public void akkhaShadowSlamIsAvoidable()
+	{
+		// Wiki-corrected 2026-07-12: Akkha's Shadow's quadrant element slam is dodgeable (kill the shadow
+		// before its bar fills, or step out of the quadrant). Previously wrongly tagged unavoidable.
+		MechanicTag tag = ToaMechanics.classify(base(ToaRooms.AKKHA).sourceNpcId(NpcID.AKKHA_SHADOW).build());
+		assertEquals("AKKHA_SHADOW_ATTACK", tag.getMechanic());
+		assertEquals(true, tag.isAvoidable());
+	}
+
+	@Test
+	public void akkhaTrailOrbIsAvoidableButEnrageOrbIsNot()
+	{
+		// The elemental trail orbs are a step-on-them positioning mistake (avoidable)...
+		MechanicTag trail = ToaMechanics.classify(
+			base(ToaRooms.AKKHA).sourceNpcId(NpcID.AKKHA_TRAIL_ORB_LIGHTNING).build());
+		assertEquals("AKKHA_ELEMENTAL_ORB", trail.getMechanic());
+		assertEquals(true, trail.isAvoidable());
+
+		// ...but the enrage-phase white orbs are capped chip that hits regardless of positioning.
+		MechanicTag enrage = ToaMechanics.classify(
+			base(ToaRooms.AKKHA).sourceNpcId(NpcID.AKKHA_ENRAGE_ORB).build());
+		assertEquals("AKKHA_ENRAGE_ORB", enrage.getMechanic());
+		assertEquals(false, enrage.isAvoidable());
+	}
+
+	@Test
+	public void poisonIsAvoidableInZebakAndCrondisButNotKephri()
+	{
+		// Zebak acid pools and Crondis waterfall poison clouds are dodgeable ground hazards.
+		assertEquals(true, ToaMechanics.classify(
+			base(ToaRooms.ZEBAK).hitsplatType(HitsplatID.POISON).build()).isAvoidable());
+		assertEquals(true, ToaMechanics.classify(
+			base(ToaRooms.PUZZLE_CRONDIS).hitsplatType(HitsplatID.POISON).build()).isAvoidable());
+		// Kephri's Spitting-scarab poison "can hit through prayers" — not a clean dodge, stays unavoidable.
+		MechanicTag kephri = ToaMechanics.classify(
+			base(ToaRooms.KEPHRI).hitsplatType(HitsplatID.POISON).build());
+		assertEquals("POISON", kephri.getMechanic());
+		assertEquals(false, kephri.isAvoidable());
 	}
 }

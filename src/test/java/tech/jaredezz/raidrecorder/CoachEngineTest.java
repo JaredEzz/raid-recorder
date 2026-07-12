@@ -9,6 +9,7 @@ import tech.jaredezz.raidrecorder.coach.CoachThresholds;
 import tech.jaredezz.raidrecorder.coach.rules.AvoidableDamageRule;
 import tech.jaredezz.raidrecorder.coach.rules.DeathsRule;
 import tech.jaredezz.raidrecorder.coach.rules.DpsUptimeRule;
+import tech.jaredezz.raidrecorder.coach.rules.OwnedButUnusedUpgradeRule;
 import tech.jaredezz.raidrecorder.model.AccountType;
 import tech.jaredezz.raidrecorder.model.CoachFinding;
 import tech.jaredezz.raidrecorder.model.RaidRecord;
@@ -178,5 +179,56 @@ public class CoachEngineTest
 		assertEquals(1, findings.size());
 		assertEquals(Severity.GOOD, findings.get(0).getSeverity());
 		assertEquals("deathless", findings.get(0).getRule());
+	}
+
+	private static RaidRecord recordWithUsedWeapon(String weaponName)
+	{
+		RoomRecord room = room(60);
+		RoomRecord.EquipmentSnapshot snapshot = new RoomRecord.EquipmentSnapshot();
+		snapshot.getItems().put("WEAPON", new RoomRecord.Item(0, weaponName));
+		room.getEquipmentTimeline().add(snapshot);
+		return recordWithRoom(room);
+	}
+
+	private static CoachContext contextWithBank(String... bankItemNames)
+	{
+		CoachThresholds thresholds = new CoachThresholds();
+		RaidRecord.BankSnapshot bank = new RaidRecord.BankSnapshot();
+		int id = 1;
+		for (String name : bankItemNames)
+		{
+			bank.getNames().put(String.valueOf(id++), name);
+		}
+		return new CoachContext(thresholds, thresholds.bandFor(200), AccountType.GROUP_IRONMAN, bank, MODULE);
+	}
+
+	@Test
+	public void ownedUpgradeFiresWhenBankBeatsUsedWeapon()
+	{
+		// Raided with a Ghrazi rapier, but a Scythe of Vitur is sitting in the bank (higher rung).
+		List<CoachFinding> findings = new OwnedButUnusedUpgradeRule()
+			.evaluate(recordWithUsedWeapon("Ghrazi rapier"), contextWithBank("Scythe of Vitur"));
+		assertEquals(1, findings.size());
+		assertEquals("owned_but_unused_upgrade", findings.get(0).getRule());
+		assertEquals(Severity.INFO, findings.get(0).getSeverity());
+	}
+
+	@Test
+	public void soulreaperAxeIsRankedAboveFang()
+	{
+		// Locks in the added melee rung: an owned Soulreaper axe outranks a used Osmumten's fang.
+		List<CoachFinding> findings = new OwnedButUnusedUpgradeRule()
+			.evaluate(recordWithUsedWeapon("Osmumten's fang"), contextWithBank("Soulreaper axe"));
+		assertEquals(1, findings.size());
+		assertEquals("owned_but_unused_upgrade", findings.get(0).getRule());
+	}
+
+	@Test
+	public void noUpgradeWhenUsedWeaponIsTopRung()
+	{
+		// Raided with the Scythe (top rung); a banked fang is NOT flagged as an upgrade.
+		List<CoachFinding> findings = new OwnedButUnusedUpgradeRule()
+			.evaluate(recordWithUsedWeapon("Scythe of Vitur"), contextWithBank("Osmumten's fang"));
+		assertTrue(findings.isEmpty());
 	}
 }

@@ -363,6 +363,9 @@ public class ToaModule implements RaidModule
 	{
 		Map<String, Double> benchmarks = new LinkedHashMap<>();
 		// Wardens P1/P2 has long forced-downtime phases (obelisk transitions), so expect less uptime.
+		// 40.0 is an informed estimate (not a sourced benchmark — see KNOWN_UNKNOWNS.md #15), lowered
+		// from the 55 base to avoid false WARNs on a phase where the uptime denominator counts ticks
+		// the boss is unavoidably invulnerable (see KNOWN_UNKNOWNS.md #9).
 		if (ToaRooms.WARDENS_P1_P2.equals(roomKey))
 		{
 			benchmarks.put("dpsUptimeWarnPct", 40.0);

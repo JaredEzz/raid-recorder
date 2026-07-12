@@ -9,6 +9,16 @@ import lombok.Setter;
  * Editable coach thresholds, loaded from coach-thresholds.json (a default is written to the
  * export directory on first run — edit it there). All values are the *base* expectation for an
  * experienced player; KC bands relax them for learners.
+ *
+ * <p><b>These defaults are informed estimates, NOT verified facts</b> (see KNOWN_UNKNOWNS.md #15).
+ * There is no official Jagex source and no authoritative community benchmark for numbers this
+ * specific — e.g. "expected DPS uptime %" in ToA is not published anywhere; ToA guides describe DPS
+ * checks qualitatively (entry/normal/expert), not as a target uptime figure. The values here are
+ * hand-calibrated to be plausible-but-lenient (a warn bar of ~49% uptime at KC 66 after band slack
+ * is a floor a competent raider clears comfortably, not a claim about the "correct" number), and
+ * they are meant to be edited in the JSON to taste. Do not present them, or anything derived from
+ * them, as a sourced/objective standard. They exist to make the coach's INFO/WARN nudges fire in a
+ * reasonable range, and are safe to change without breaking any factual guarantee.
  */
 @Getter
 @Setter

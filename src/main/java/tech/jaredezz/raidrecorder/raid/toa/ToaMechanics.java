@@ -75,15 +75,24 @@ final class ToaMechanics
 	private static Map<Integer, MechanicTag> buildNpcMap()
 	{
 		Map<Integer, MechanicTag> map = new HashMap<>();
-		// Akkha elemental trail orbs: touching them is always a mistake.
+		// Akkha elemental trail orbs: they only spawn behind a moving player and only hit if you step
+		// on one, so they're a pure positioning mistake (stand still / don't walk into them). Wiki: /w/Akkha.
 		MechanicTag akkhaOrb = new MechanicTag("AKKHA_ELEMENTAL_ORB", true);
 		map.put(NpcID.AKKHA_TRAIL_ORB_LIGHTNING, akkhaOrb);
 		map.put(NpcID.AKKHA_TRAIL_ORB_DARKNESS, akkhaOrb);
 		map.put(NpcID.AKKHA_TRAIL_ORB_BURN, akkhaOrb);
 		map.put(NpcID.AKKHA_TRAIL_ORB_FREEZE, akkhaOrb);
-		map.put(NpcID.AKKHA_ENRAGE_ORB, akkhaOrb);
-		map.put(NpcID.AKKHA_SHADOW, new MechanicTag("AKKHA_SHADOW_ATTACK", false));
-		map.put(NpcID.AKKHA_SHADOW_ENRAGE, new MechanicTag("AKKHA_SHADOW_ATTACK", false));
+		// NOT the trail orbs: the enrage-phase white orbs stream across the whole arena and hit
+		// "regardless of player positioning," a capped (scales to raid/path level but ≤25) chip tax you
+		// can't cleanly dodge. Previously (wrongly) grouped with the avoidable trail orbs. Wiki: /w/Akkha
+		// ("Enrage" section). See KNOWN_UNKNOWNS §16.
+		map.put(NpcID.AKKHA_ENRAGE_ORB, new MechanicTag("AKKHA_ENRAGE_ORB", false));
+		// Akkha's Shadow's quadrant slam IS avoidable: each shadow charges an element attack on its own
+		// quadrant (a bar fills over its head) — kill it before the bar fills to cancel that quadrant, or
+		// step out as the element sweeps edge-to-centre. A hit means you failed to do either. Previously
+		// (wrongly) false. Wiki: /w/Akkha's_Shadow, /w/Tombs_of_Amascut/Strategies.
+		map.put(NpcID.AKKHA_SHADOW, new MechanicTag("AKKHA_SHADOW_ATTACK", true));
+		map.put(NpcID.AKKHA_SHADOW_ENRAGE, new MechanicTag("AKKHA_SHADOW_ATTACK", true));
 
 		MechanicTag rollingBoulder = new MechanicTag("BABA_ROLLING_BOULDER", true);
 		map.put(NpcID.TOA_BABA_BOULDER, rollingBoulder);
@@ -97,10 +106,19 @@ final class ToaMechanics
 		map.put(NpcID.TOA_ZEBAK_BLOOD_CLOUD_SMALL, bloodCloud);
 
 		map.put(NpcID.TOA_KEPHRI_SCARAB_RANGEKITE, new MechanicTag("KEPHRI_EXPLODING_SCARAB", true));
+		// Kephri's guardian scarabs (Soldier=melee, Spitting=ranged, Arcane=magic). Kept false: while
+		// they're up you should pray against them, but the Spitting scarab is "fairly accurate and can
+		// hit through prayers," so being chipped isn't a clean player-attributable mistake — it's an
+		// adds-are-alive tax, not a dodge. Flagging it avoidable would fire false CRITICALs. See
+		// KNOWN_UNKNOWNS §16. Wiki: /w/Spitting_Scarab, /w/Soldier_Scarab, /w/Arcane_Scarab.
 		map.put(NpcID.TOA_KEPHRI_GUARDIAN_MELEE, new MechanicTag("KEPHRI_GUARDIAN", false));
 		map.put(NpcID.TOA_KEPHRI_GUARDIAN_RANGED, new MechanicTag("KEPHRI_GUARDIAN", false));
 		map.put(NpcID.TOA_KEPHRI_GUARDIAN_MAGE, new MechanicTag("KEPHRI_GUARDIAN", false));
 
+		// Crondis crocodiles: melee adds with an aggression priority (tree > water-carriers > others).
+		// Kept false: Protect from Melee only cuts them to 33% (not a full block) and still drains 12
+		// prayer, so a hit carries a guaranteed prayer-piercing component — not a clean dodge. Gray call
+		// documented in KNOWN_UNKNOWNS §16. Wiki: /w/Path_of_Crondis.
 		map.put(NpcID.TOA_CRONDIS_CROCODILE, new MechanicTag("CRONDIS_CROCODILE", false));
 		map.put(NpcID.TOA_WARDEN_TUMEKEN_CORE, new MechanicTag("WARDENS_CORE_CONTACT", true));
 		map.put(NpcID.TOA_WARDEN_ELIDINIS_CORE, new MechanicTag("WARDENS_CORE_CONTACT", true));
@@ -134,11 +152,21 @@ final class ToaMechanics
 
 		if (ctx.getHitsplatType() == HitsplatID.POISON || ctx.getHitsplatType() == HitsplatID.VENOM)
 		{
-			// In ToA poison is overwhelmingly Zebak's acid pools / poison spit — dodgeable.
-			return new MechanicTag("POISON", ToaRooms.ZEBAK.equals(ctx.getRoom()));
+			// Poison is only cleanly avoidable in the rooms whose poison comes from ground pools/clouds
+			// you dodge: Zebak (acid pools — "avoid them at all costs") and Crondis (waterfall poison
+			// clouds). Elsewhere — notably Kephri's Spitting scarab, whose ranged poison "can hit through
+			// prayers" — poison is not a clean dodge, so it stays unavoidable. Wiki: /w/Zebak,
+			// /w/Path_of_Crondis, /w/Spitting_Scarab. See KNOWN_UNKNOWNS §16.
+			String room = ctx.getRoom();
+			boolean avoidablePoison = ToaRooms.ZEBAK.equals(room) || ToaRooms.PUZZLE_CRONDIS.equals(room);
+			return new MechanicTag("POISON", avoidablePoison);
 		}
 		if (ctx.getHitsplatType() == HitsplatID.BURN)
 		{
+			// No identifiable ToA mechanic delivers a *bare* BURN hitsplat as a clean, positionally
+			// avoidable dodge: Akkha's burn trail orb and Kephri's fireball are already caught upstream by
+			// NPC/projectile id. With no verified avoidable burn source, stay conservative (false) rather
+			// than over-flag an unknown source as a mistake. Unresolved — see KNOWN_UNKNOWNS §16.
 			return new MechanicTag("BURN", false);
 		}
 
@@ -220,6 +248,11 @@ final class ToaMechanics
 		}
 		if (id == GO_CRONDIS_WATER_HAZARD)
 		{
+			// The Crondis waterfall guardians' traps: side statues fire retracting spikes and the front
+			// statue discharges poison clouds that flow down the path. Both are telegraphed and dodgeable
+			// by timing/positioning (a hit also halves your water and drains stats) — genuinely avoidable.
+			// The tag name is a slight misnomer (it's a trap, not standing "water"), kept for continuity.
+			// Wiki: /w/Path_of_Crondis. avoidable=true confirmed. See KNOWN_UNKNOWNS §16.
 			return roomTag(room, ToaRooms.PUZZLE_CRONDIS, "CRONDIS_WATER_HAZARD", true);
 		}
 		return null;

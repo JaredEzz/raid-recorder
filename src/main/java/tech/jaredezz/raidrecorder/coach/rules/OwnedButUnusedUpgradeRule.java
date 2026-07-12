@@ -23,11 +23,40 @@ import tech.jaredezz.raidrecorder.model.Severity;
  */
 public class OwnedButUnusedUpgradeRule implements CoachRule
 {
-	/** Ladders are worst→best; the coach flags when the bank rank beats the used rank. */
+	/**
+	 * Ladders are worst→best; the coach flags (INFO only) when the bank rank beats the used rank.
+	 *
+	 * <p><b>KNOWN DESIGN LIMITATION (see KNOWN_UNKNOWNS.md #14).</b> A single flat "worst→best"
+	 * order per style is a deliberately coarse model. Real best-in-slot in OSRS is
+	 * <i>target-dependent</i> — it turns on the target's defence type, size, and magic level — so no
+	 * flat ladder can be strictly correct for every boss. The lower rungs of each ladder are a sound
+	 * progression (a whip is unambiguously below a rapier); the <b>top rungs are near-peers whose
+	 * relative order flips by target</b>, e.g.:
+	 * <ul>
+	 *   <li>MELEE: Scythe of Vitur is BiS on large/multi-tile monsters (it hits up to 3x per swing),
+	 *       but Osmumten's fang is BiS on high-defence single targets — which is <i>most ToA
+	 *       bosses</i>, where the OSRS Wiki's own max-efficiency setups name the fang, not the scythe,
+	 *       as primary melee. Soulreaper axe (at 5 stacks) can out-DPS the scythe on 1x1/2x2 monsters.
+	 *       So a "you own a Scythe, bring it instead of your fang" hint is often <i>wrong for this
+	 *       plugin's own domain</i>. The order below keeps the scythe nominally top only because it is
+	 *       the general whole-game convention; treat the fang↔axe↔scythe ordering as "same tier", not
+	 *       a real DPS claim.</li>
+	 *   <li>RANGED: Twisted bow is BiS vs high-magic targets, Bow of faerdhinen vs low/mid-defence,
+	 *       Zaryte crossbow for its spec / specific encounters, and Dragon hunter crossbow is
+	 *       <i>anti-dragon only</i> (below blowpipe/bofa on everything else) — its fixed mid-ladder
+	 *       rank is not a general truth.</li>
+	 *   <li>MAGIC: Tumeken's shadow is clear BiS; Harmonised nightmare staff is a standard-spellbook
+	 *       casting weapon, not directly comparable to the powered staffs below it, so its rank is
+	 *       approximate.</li>
+	 * </ul>
+	 * Because the rule only fires INFO ("you own a higher-tier weapon"), a wrong intra-tier ordering
+	 * degrades to a soft, ignorable nudge rather than a hard "do this" — but it is NOT a verified
+	 * DPS ranking. Ordering reviewed against the OSRS Wiki 2026-07-12 (see KNOWN_UNKNOWNS.md #14).
+	 */
 	private static final Map<String, List<String>> LADDERS = ImmutableMap.of(
 		GearStyles.MELEE, ImmutableList.of(
 			"abyssal whip", "abyssal tentacle", "blade of saeldor", "ghrazi rapier",
-			"osmumten's fang", "scythe of vitur"),
+			"osmumten's fang", "soulreaper axe", "scythe of vitur"),
 		GearStyles.RANGED, ImmutableList.of(
 			"rune crossbow", "dragon crossbow", "armadyl crossbow", "toxic blowpipe",
 			"dragon hunter crossbow", "bow of faerdhinen", "zaryte crossbow", "twisted bow"),
