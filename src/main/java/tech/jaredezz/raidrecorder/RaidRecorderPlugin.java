@@ -31,6 +31,7 @@ import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.util.ImageUtil;
 import tech.jaredezz.raidrecorder.capture.CaptureEngine;
+import tech.jaredezz.raidrecorder.capture.LiveHitEvent;
 import tech.jaredezz.raidrecorder.export.RaidExporter;
 import tech.jaredezz.raidrecorder.history.RaidHistoryEntry;
 import tech.jaredezz.raidrecorder.history.RaidHistoryStats;
@@ -141,6 +142,14 @@ public class RaidRecorderPlugin extends Plugin
 		captureEngine.setOnRoomCompleted(room ->
 			partyAggregator.broadcastRoom(activeRaidKey(), localRsn(), room));
 		captureEngine.setOnRaidFinished(this::handleFinishedRaid);
+		captureEngine.setOnLiveHit(this::onLiveHit);
+		captureEngine.setOnRaidStarted(() -> SwingUtilities.invokeLater(() ->
+		{
+			if (panel != null)
+			{
+				panel.clearLiveFeed();
+			}
+		}));
 		invocationReader.setOnRead(this::onInvocationsRead);
 
 		log.info("Raid Recorder started — exports go to {}", exporter.exportDir());
@@ -235,6 +244,21 @@ public class RaidRecorderPlugin extends Plugin
 			if (panel != null)
 			{
 				panel.setHistory(entries, stats);
+			}
+		});
+	}
+
+	// ====================== //
+	//        LIVE FEED        //
+	// ====================== //
+
+	private void onLiveHit(LiveHitEvent event)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			if (panel != null)
+			{
+				panel.pushLiveHit(event);
 			}
 		});
 	}

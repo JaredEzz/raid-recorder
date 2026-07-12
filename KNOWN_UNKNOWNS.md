@@ -132,6 +132,17 @@ lowered to 40% to compensate.
 Type 11 (CYAN_UP) is both Kephri's shield-heal and the Crondis-puzzle water meter. We don't use
 type 11 for anything today; if you extend the recorder to track heals, disambiguate by room.
 
+## 11. Live-feed "luck" is empirical, not a theoretical max-hit calculator (by design)
+
+`LiveHitTracker` computes "how lucky was this hit" as a percentage of the highest hit you've
+*actually landed* with the current weapon so far this raid — not a calculated theoretical maximum
+from gear/prayers/style/boosts/target defense. A real combat-formula calculator would need to
+correctly model every ToA invocation that changes damage output (Overclocked/Overclocked
+II/Insanity, etc.) and would be a meaningful secondary project prone to subtle errors; the
+empirical approach is always correct by construction, at the cost of the first hit with any
+weapon having no ceiling to compare against yet (shown as "first hit," not scored). If a true
+theoretical calculator is wanted later, it's a separate, larger addition — not a bug fix to this.
+
 ## Assumptions (explicit)
 
 1. Raid detection is purely region-based (`WorldPoint.fromLocalInstance`); no varbit fallback for ToA.

@@ -21,15 +21,18 @@ import javax.swing.border.EmptyBorder;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.PluginPanel;
+import tech.jaredezz.raidrecorder.capture.LiveHitEvent;
 import tech.jaredezz.raidrecorder.history.RaidHistoryEntry;
 import tech.jaredezz.raidrecorder.history.RaidHistoryStats;
 import tech.jaredezz.raidrecorder.raid.toa.ToaInvocation;
 
 /**
- * Side panel: cross-raid history &amp; stats (from {@link tech.jaredezz.raidrecorder.history}),
- * plus the ToA party invocation-sync checklist. Ported from the earlier toa-raid-log plugin, which
- * this plugin supersedes — the per-room black-box capture and coach have no UI of their own by
- * design (they're file exports, meant to be read in Obsidian or pasted into an AI).
+ * Side panel: a live per-hit feed with pixel-art hitsplat badges and DPS during a raid, cross-raid
+ * history &amp; stats (from {@link tech.jaredezz.raidrecorder.history}), plus the ToA party
+ * invocation-sync checklist. The history/sync parts are ported from the earlier toa-raid-log
+ * plugin, which this plugin supersedes. The per-room black-box capture and coach otherwise have
+ * no UI of their own by design (they're file exports, meant to be read in Obsidian or pasted into
+ * an AI) — the live feed is the one place this plugin shows anything in real time.
  */
 public class RaidRecorderPanel extends PluginPanel
 {
@@ -37,7 +40,10 @@ public class RaidRecorderPanel extends PluginPanel
 		DateTimeFormatter.ofPattern("MMM d HH:mm").withZone(ZoneId.systemDefault());
 	private static final int RECENT_RAIDS_SHOWN = 8;
 	private static final int INVOCATION_FREQUENCIES_SHOWN = 10;
+	private static final int LIVE_FEED_ROWS_SHOWN = 12;
 
+	private final JLabel dpsLabel = new JLabel("DPS: —");
+	private final JPanel liveFeedSection = section();
 	private final JLabel statusLabel = new JLabel();
 	private final JPanel summarySection = section();
 	private final JPanel frequencySection = section();
@@ -87,8 +93,14 @@ public class RaidRecorderPanel extends PluginPanel
 		buttons.add(setTargetButton, BorderLayout.CENTER);
 		buttons.add(clearTargetButton, BorderLayout.EAST);
 
+		dpsLabel.setFont(FontManager.getRunescapeSmallFont());
+		dpsLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+
 		content.add(title);
 		content.add(statusLabel);
+		content.add(heading("Live feed"));
+		content.add(dpsLabel);
+		content.add(liveFeedSection);
 		content.add(heading("Summary"));
 		content.add(summarySection);
 		content.add(heading("Invocation frequency"));
@@ -110,6 +122,63 @@ public class RaidRecorderPanel extends PluginPanel
 	{
 		this.onSetTarget = onSetTarget;
 		this.onClearTarget = onClearTarget;
+	}
+
+	/** Clear the feed for a new raid. Call on the EDT. */
+	public void clearLiveFeed()
+	{
+		liveFeedSection.removeAll();
+		dpsLabel.setText("DPS: —");
+		revalidate();
+		repaint();
+	}
+
+	/** Insert one hit at the top of the feed, trimming to the last {@link #LIVE_FEED_ROWS_SHOWN}. */
+	public void pushLiveHit(LiveHitEvent event)
+	{
+		PixelIcon.Tier tier;
+		String subtitle;
+		if (event.isFirst)
+		{
+			tier = PixelIcon.Tier.FIRST;
+			subtitle = "first hit this raid";
+		}
+		else if (event.newMax)
+		{
+			tier = PixelIcon.Tier.NEW_MAX;
+			subtitle = "NEW MAX! (prev " + event.priorMax + ")";
+		}
+		else
+		{
+			tier = PixelIcon.tierFor(event.luckPct);
+			subtitle = String.format("%.0f%% of your max (%d)", event.luckPct, event.priorMax);
+		}
+
+		JPanel row = new JPanel(new BorderLayout(6, 0));
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		row.add(new JLabel(PixelIcon.hitBadge(event.amount, tier)), BorderLayout.WEST);
+
+		JLabel text = new JLabel("<html>" + event.target + " &mdash; " + event.amount
+			+ "<br><span style='color:#" + hex(tier.color) + "'>" + subtitle + "</span></html>");
+		text.setFont(FontManager.getRunescapeSmallFont());
+		text.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		row.add(text, BorderLayout.CENTER);
+
+		liveFeedSection.add(row, 0);
+		while (liveFeedSection.getComponentCount() > LIVE_FEED_ROWS_SHOWN)
+		{
+			liveFeedSection.remove(liveFeedSection.getComponentCount() - 1);
+		}
+
+		dpsLabel.setText(String.format("DPS: %.1f  (session avg %.1f)", event.rollingDps, event.sessionDps));
+
+		revalidate();
+		repaint();
+	}
+
+	private static String hex(Color c)
+	{
+		return String.format("%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue());
 	}
 
 	/** Replace the raid history and its computed stats. Call on the EDT. */

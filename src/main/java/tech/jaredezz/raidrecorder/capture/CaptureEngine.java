@@ -79,6 +79,14 @@ public class CaptureEngine
 	@Setter
 	private Consumer<RoomRecord> onRoomCompleted;
 
+	/** Invoked on the client thread with each of your damage-dealt hits (for the live feed). */
+	@Setter
+	private Consumer<LiveHitEvent> onLiveHit;
+
+	/** Invoked on the client thread when a new raid session starts (to reset the live feed). */
+	@Setter
+	private Runnable onRaidStarted;
+
 	private RaidSession session;
 	private int outOfRaidTicks;
 	private int completionCountdown = -1;
@@ -92,6 +100,11 @@ public class CaptureEngine
 	private Map<String, Integer> lastInventoryDoses;
 	private int lastTargetedProjectileId = -1;
 	private int lastTargetedProjectileTick = -1;
+	private final LiveHitTracker liveHitTracker = new LiveHitTracker();
+	private final LiveDpsTracker liveDpsTracker = new LiveDpsTracker();
+	/** Weapon currently worn, tracked independently of room capture so the live feed works even
+	 *  with equipment capture disabled, and is correct the instant a raid starts. */
+	private String currentWeaponName = "Unarmed";
 
 	@Inject
 	CaptureEngine(Client client, RaidRecorderConfig config, RaidModuleRegistry registry,
@@ -205,6 +218,12 @@ public class CaptureEngine
 		completionCountdown = -1;
 		lastInventoryDoses = null;
 		lastSpecEnergy = client.getVarpValue(VarPlayerID.SA_ENERGY);
+		liveHitTracker.reset();
+		liveDpsTracker.start(session.getStartEpochMs());
+		if (onRaidStarted != null)
+		{
+			onRaidStarted.run();
+		}
 		log.info("[raid-recorder] recording started: {} at tick {}", module.raidKey(), session.getStartTick());
 	}
 
@@ -294,13 +313,30 @@ public class CaptureEngine
 		if (target instanceof NPC && event.getHitsplat().isMine())
 		{
 			NPC npc = (NPC) target;
-			room.recordDamageDealt(tick, module.npcLabel(npc), event.getHitsplat().getAmount());
+			int amount = event.getHitsplat().getAmount();
+			String targetLabel = module.npcLabel(npc);
+			room.recordDamageDealt(tick, targetLabel, amount);
+			recordLiveHit(targetLabel, amount);
 			return;
 		}
 
 		if (target == client.getLocalPlayer())
 		{
 			recordDamageTaken(event, room, module, tick);
+		}
+	}
+
+	/** Packages a damage-dealt hit for the live feed: running per-weapon max + rolling/session DPS. */
+	private void recordLiveHit(String targetLabel, int amount)
+	{
+		long now = System.currentTimeMillis();
+		LiveHitTracker.Result result = liveHitTracker.record(currentWeaponName, amount);
+		liveDpsTracker.record(now, amount);
+		if (onLiveHit != null)
+		{
+			onLiveHit.accept(new LiveHitEvent(now, currentWeaponName, targetLabel, amount,
+				result.priorMax, result.isFirst, result.newMax, result.luckPct,
+				liveDpsTracker.rollingDps(now), liveDpsTracker.sessionDps(now)));
 		}
 	}
 
@@ -534,6 +570,12 @@ public class CaptureEngine
 			logContainerDiagnostic(event.getContainerId() == InventoryID.INV ? "inventory" : "equipment",
 				event.getItemContainer());
 		}
+		if (event.getContainerId() == InventoryID.WORN)
+		{
+			// Tracked independently of capture toggles/session state so the live feed always has
+			// the right weapon the instant a raid starts, even with equipment capture disabled.
+			updateCurrentWeaponName(event.getItemContainer());
+		}
 		if (session == null)
 		{
 			return;
@@ -588,6 +630,17 @@ public class CaptureEngine
 				.append(" x").append(item.getQuantity());
 		}
 		log.info("[raid-recorder] {} read: {} items — {}{}", label, count, items, truncated ? ", ..." : "");
+	}
+
+	private void updateCurrentWeaponName(ItemContainer worn)
+	{
+		if (worn == null)
+		{
+			return;
+		}
+		Item weapon = worn.getItem(EquipmentInventorySlot.WEAPON.getSlotIdx());
+		currentWeaponName = weapon != null && weapon.getId() > 0
+			? itemManager.getItemComposition(weapon.getId()).getName() : "Unarmed";
 	}
 
 	private void snapshotEquipment(RoomCapture room, int tick)

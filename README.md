@@ -38,10 +38,21 @@ tells an ironman to buy anything; the owned-but-unused rule only surfaces gear p
 bank), and raid-aware (benchmarks come from the raid module). Thresholds live in an editable
 `coach-thresholds.json` next to the exports. It reports what went *well*, not just what went wrong.
 
-## Side panel: raid history &amp; invocation sync (ToA)
+## Side panel: live feed, raid history &amp; invocation sync
 
-The per-room capture and coach are file exports with no UI of their own by design (they're meant
-to be read in Obsidian or pasted into an AI). The panel instead covers what toa-raid-log did:
+The per-room capture and coach are otherwise file exports with no UI of their own (they're meant
+to be read in Obsidian or pasted into an AI) — the live feed is the one place this plugin shows
+anything in real time.
+
+**Live feed**: every hit you deal during a raid shows up instantly as a small pixel-art hitsplat
+badge (rendered locally — no external art assets), color-coded by how it compares to the highest
+hit you've landed with that weapon *so far this raid* (an empirical running max, not a calculated
+theoretical one — see the design note in [KNOWN_UNKNOWNS.md](KNOWN_UNKNOWNS.md)): gold for a new
+max, red/yellow/blue/gray for roughly how close to your current ceiling the hit landed, gray for
+the first hit with a weapon (no ceiling yet). Alongside it, a live rolling DPS (10s window) and a
+running session-average DPS, both updating with each hit.
+
+The panel also covers what toa-raid-log did:
 
 - **Permanent raid history** — every completed ToA raid logged with its invocations, raid level,
   points (the real end-of-raid `TOA_PERSONAL_CONTRIBUTION` value, not a damage-based estimate),
@@ -75,7 +86,8 @@ RaidRecorderPlugin          wiring only: eventbus registration, callbacks, dev c
  ├─ export/RaidExporter     JSON + summary.md + prompt.md on the background executor
  ├─ party/PartyAggregator   room-summary Party messages; RSN-keyed team report
  ├─ history/RaidHistoryStore  permanent per-account raid log + frequency stats (ported from toa-raid-log)
- └─ panel/RaidRecorderPanel   history/stats + invocation-sync checklist (ToA only)
+ └─ panel/RaidRecorderPanel   live hit feed + DPS, history/stats, invocation-sync checklist
+     └─ PixelIcon             locally-rendered pixel-art hitsplat badges, no external assets
 ```
 
 Adding CoX/ToB = implement `RaidModule`, register it in `RaidModuleRegistry`. The engine, coach,
